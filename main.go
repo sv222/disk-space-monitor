@@ -29,9 +29,7 @@ func readConfig() Configuration {
     return configuration
 }
 
-var(
-    token, chatID = ""
-)
+var token, chatID string
 
 type options struct {
 	Interval int    `short:"i" long:"interval" default:"60" description:"Interval in seconds for checking disk usage"`
