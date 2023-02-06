@@ -1,76 +1,91 @@
 package main
 
 import (
-    "bytes"
-    "flag"
-    "fmt"
-    "net/http"
-    "os"
-    "syscall"
+	"fmt"
+	"log"
+	"os"
+	"os/exec"
+	"strconv"
+	"strings"
+	"time"
+
+	"github.com/jessevdk/go-flags"
 )
 
-const threshold = 90
-const telegramAPI = "https://api.telegram.org/bot<BOT_TOKEN>/sendMessage"
-const chatID = "<CHAT_ID>"
-
-func checkDiskUsage(path string) (int, error) {
-    fs := syscall.Statfs_t{}
-    err := syscall.Statfs(path, &fs)
-    if err != nil {
-        return 0, err
-    }
-    used := 100 * (fs.Blocks - fs.Bfree) / fs.Blocks
-    return used, nil
+type Configuration struct {
+    Token string
+    ChatID string
 }
 
-func sendTelegramAlert(message string) error {
-    body := []byte(fmt.Sprintf("chat_id=%s&text=%s", chatID, message))
-    resp, err := http.Post(telegramAPI, "application/x-www-form-urlencoded", bytes.NewBuffer(body))
+func readConfig() Configuration {
+    file, _ := os.Open("config.json")
+    defer file.Close()
+    decoder := json.NewDecoder(file)
+    configuration := Configuration{}
+    err := decoder.Decode(&configuration)
     if err != nil {
-        return err
+        log.Fatalf("Error reading configuration: %s", err)
     }
-    defer resp.Body.Close()
-    if resp.StatusCode != http.StatusOK {
-        return fmt.Errorf("Unexpected status code: %d", resp.StatusCode)
-    }
-    return nil
+    return configuration
+}
+
+var(
+    token, chatID = ""
+)
+
+type options struct {
+	Interval int    `short:"i" long:"interval" default:"60" description:"Interval in seconds for checking disk usage"`
+	Path     string `short:"p" long:"path" default:"/" description:"Path to monitor disk usage"`
+	Threshold int    `short:"t" long:"threshold" default:"90" description:"Threshold for disk usage percentage"`
 }
 
 func main() {
-    var showHelp bool
-    flag.BoolVar(&showHelp, "h", false, "show help")
-    flag.BoolVar(&showHelp, "help", false, "show help")
-    flag.Parse()
 
-    if showHelp {
-        fmt.Println("Usage: disk-space-monitor [OPTION]...")
-        fmt.Println("Monitor disk usage and send an alert via Telegram if disk usage exceeds a specified threshold.")
-        fmt.Println("")
-        fmt.Println("Options:")
-        fmt.Println("  -h, --help     show help")
-        fmt.Println("")
-        os.Exit(0)
-    }
+    config := readConfig()
 
-    path := "/"
-    if len(os.Args) > 1 {
-        path = os.Args[1]
-    }
-    used, err := checkDiskUsage(path)
+	var opts options
+	_, err := flags.Parse(&opts)
+	if err != nil {
+		log.Fatalf("Error parsing options: %s", err)
+	}
+
+	for {
+		output, err := exec.Command("df", "-h", opts.Path).Output()
+		if err != nil {
+			log.Fatalf("Error running command 'df': %s", err)
+		}
+
+		lines := strings.Split(string(output), "\n")
+		if len(lines) < 2 {
+			log.Fatalf("Unexpected output from 'df'")
+		}
+
+		fields := strings.Fields(lines[1])
+		if len(fields) < 5 {
+			log.Fatalf("Unexpected output from 'df'")
+		}
+
+		usage, err := strconv.Atoi(strings.TrimRight(fields[4], "%"))
+		if err != nil {
+			log.Fatalf("Error parsing disk usage: %s", err)
+		}
+
+		if usage >= opts.Threshold {
+			fmt.Printf("Disk usage exceeded threshold of %d%%\n", opts.Threshold)
+			// Send alert via Telegram
+			sendTelegramAlert(opts.Threshold, usage)
+		}
+
+		time.Sleep(time.Duration(opts.Interval) * time.Second)
+	}
+}
+
+func sendTelegramAlert(threshold int, usage int) {
+    msg := fmt.Sprintf("Disk usage on server has exceeded the threshold of %d%% (current usage: %d%%)", threshold, usage)
+
+    apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s", config.token, config.chatID, msg)
+    _, err := http.Get(apiURL)
     if err != nil {
-        fmt.Fprintln(os.Stderr, "Error:", err)
-        os.Exit(1)
+        log.Printf("Error sending Telegram message: %s", err)
     }
-    if used > threshold {
-        message := fmt.Sprintf("Disk usage on %s exceeds threshold of %d%%\n", path, threshold)
-        err := sendTelegramAlert(message)
-        if err != nil {
-            fmt.Fprintln(os.Stderr, "Error:", err)
-            os.Exit(1)
-        }
-        fmt.Println(message)
-        os.Exit(1)
-    }
-    fmt.Printf("Disk usage on %s is below threshold of %d%%\n", path, threshold)
-    os.Exit(0)
 }
