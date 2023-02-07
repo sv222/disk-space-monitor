@@ -20,4 +20,4 @@ WORKDIR /app
 COPY --from=builder /app/disk-space-monitor .
 
 # Run the binary as a daemon
-CMD ["./disk-space-monitor", "-d"]
+CMD ["./disk-space-monitor", "--interval", "30", "--path", "/", "--threshold", "90"]
