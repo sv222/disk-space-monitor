@@ -1,0 +1,21 @@
+# Binaries
+*.exe
+*.dll
+*.so
+*.dylib
+
+# Configuration files
+config.json
+
+# Log files
+*.log
+
+# Temp files
+*.tmp
+*.temp
+*.swp
+*.swo
+
+# Build artifacts
+bin/
+obj/
