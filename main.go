@@ -1,9 +1,11 @@
 package main
 
 import (
-	"fmt"
+    "encoding/json"
+    "fmt"
 	"log"
-	"os"
+    "net/http"
+    "os"
 	"os/exec"
 	"strconv"
 	"strings"
@@ -40,6 +42,9 @@ type options struct {
 func main() {
 
     config := readConfig()
+
+    token = config.Token
+    chatID = config.ChatID
 
 	var opts options
 	_, err := flags.Parse(&opts)
@@ -81,7 +86,7 @@ func main() {
 func sendTelegramAlert(threshold int, usage int) {
     msg := fmt.Sprintf("Disk usage on server has exceeded the threshold of %d%% (current usage: %d%%)", threshold, usage)
 
-    apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s", config.token, config.chatID, msg)
+    apiURL := fmt.Sprintf("https://api.telegram.org/bot%s/sendMessage?chat_id=%s&text=%s", token, chatID, msg)
     _, err := http.Get(apiURL)
     if err != nil {
         log.Printf("Error sending Telegram message: %s", err)
